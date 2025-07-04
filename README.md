@@ -16,7 +16,7 @@ It is not my within my intentions to sell personal data of any kind to a marketp
 
 ## Data points collected:
 
-| **Dot Notation Path**    | **Key**          | **Type**   |
+| **JSON Path**    | **Key**          | **Python Type**   |
 | ------------------------------ | ---------------------- | ---------------- |
 | `tag`                        | `tag`                | `string`       |
 | `id`                         | `video_id`           | `string`       |
