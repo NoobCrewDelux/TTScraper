@@ -10,7 +10,7 @@ if (!tag) {
   process.exit(1);
 }
 
-const fileName = `temp_${tag}.json`;
+const fileName = `.\\data\\temp\\temp_${tag}.json`;
 
 puppeteer.use(StealthPlugin());
 

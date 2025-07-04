@@ -6,31 +6,25 @@ from datetime import datetime
 from multiprocessing import Pool, Manager
 import tkinter as tk
 import threading
-from extraction_utils import extract_valuable_info
+from extraction_utils import extract_valuable_info  
+from logging import write_log
 
 start_stamp = datetime.now().strftime('%m%d_%H%M_%S')
 
-NDJSON_FILE = rf".\data\json\tt_data_{start_stamp}.ndjson"
+NDJSON_FILE = rf".\data\json\data_{start_stamp}.ndjson"
 LOG_FILE = rf".\logs\log_{start_stamp}.log"
+
 lock = None
-scraper_count = 0
+scraper_count = 1
 
-from datetime import datetime
-
-def write_log(lock, pipid, nopid, message):
-    with lock:
-        with open(LOG_FILE, "a", encoding="utf-8") as log_file:
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-            log_file.write(f"[{timestamp}] [PID PYTHON:{pipid} NODE:{nopid}] {message}\n")
-   
 def scrape_tag(params):
     tag, lock, status_dict = params
-    temp_file = f"temp_{tag}.json"
+    temp_file = rf".\data\temp\temp_{tag}.json"
     status_dict[tag] = "running"
 
     # Run the Node.js scraper script
     result = subprocess.Popen(
-        ['node', 'scraper.js', tag],
+        ['node', r'.\src\scraper.js', tag],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         encoding='utf-8',
@@ -40,7 +34,7 @@ def scrape_tag(params):
     nopid = result.pid # PID of the Node.js subprocess
     pipid = os.getpid() # PID of the Python process
 
-    write_log(lock, pipid, nopid, f"[INFORMATION] Started scraping for #{tag}")
+    #write_log(lock, pipid, nopid, f"[INFORMATION] Started scraping for #{tag}")
     print(f"⚙️  Scraping \033[1;92m#{tag}\033[0m", end="\r")
 
     stdout, stderr = result.communicate()
@@ -48,7 +42,7 @@ def scrape_tag(params):
     # Handle errors from the scraper
     if stderr:
         print(f"❗ Scraper error for #{tag}:\n{stderr.strip()}")
-        write_log(lock, pipid, nopid, f"[ERROR] Error scraping #{tag}: {stderr.strip()}")
+        #write_log(lock, pipid, nopid, f"[ERROR] Error scraping #{tag}: {stderr.strip()}")
         status_dict["session"]["Errors"] += 1
 
     # try to load and process the scraped data
@@ -62,7 +56,7 @@ def scrape_tag(params):
         extracted = [extract_valuable_info(entry, tag) for entry in data]
 
     except json.JSONDecodeError:
-        write_log(lock, pipid, nopid, f"[WARNING] No valid data for #{tag}")
+        #write_log(lock, pipid, nopid, f"[WARNING] No valid data for #{tag}")
         print(f"⚠️  No valid data for tag: \033[1;91m#{tag}\033[0m")
         status_dict["session"]["Invalid"] += 1
         status_dict[tag] = "invalid"
@@ -74,7 +68,7 @@ def scrape_tag(params):
             for item in extracted:
                 f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
-    write_log(lock, pipid, nopid, f"[INFORMATION] Scraped {len(extracted)} videos under #{tag}")
+    #write_log(lock, pipid, nopid, f"[INFORMATION] Scraped {len(extracted)} videos under #{tag}")
     print(f"✅ Scraped \033[1;92m{len(extracted)}\033[0m videos under \033[1;92m#{tag}\033[0m")
 
     # Update session statistics
@@ -93,7 +87,7 @@ def scrape_tag(params):
     status_dict["session"]["Prev Videos"] = len(extracted)
     status_dict["session"]["Prev Tag"] = tag
     
-    write_log(lock, pipid, nopid, f"[INFORMATION] Finished scraping for #{tag}")
+    #write_log(lock, pipid, nopid, f"[INFORMATION] Finished scraping for #{tag}")
     print(f"✅ Finished scraping for \033[1;92m#{tag}\033[0m")
     return 0
 
@@ -114,11 +108,11 @@ def get_tags():
                 except Exception:
                     continue
 
-    with open("tags.txt", "r", encoding="utf-8") as f:
+    with open("data\\tags.txt", "r", encoding="utf-8") as f:
         tags = [
             line.strip()
             for line in f
-            if line.strip() and line.strip() not in scraped_tags
+            if line.strip() not in scraped_tags
         ]
     return tags
 
@@ -128,27 +122,7 @@ def update_gui(tags, status_dict, labels, time_running):
 
     # Update average stat
     if s["Tags Scraped"] > 0: s["Average"] = s["Videos Scraped"] // s["Tags Scraped"]
-
-    # Update per 5m and per 60m stats using a rolling window
-    if "history" not in s:
-        s["history"] = []
-    s["history"].append((time_running, s["Videos Scraped"]))
-    # Remove entries older than 5 minutes (300 seconds)
-    s["history"] = [h for h in s["history"] if time_running - h[0] <= 3600]
-
-    # Calculate videos scraped in the last 5 minutes
-    five_min_ago = [h for h in s["history"] if time_running - h[0] <= 300]
-    if five_min_ago:
-        s["Per 5m"] = s["Videos Scraped"] - five_min_ago[0][1]
-    else:
-        s["Per 5m"] = s["Videos Scraped"]
-
-    # Calculate videos scraped in the last 60 minutes
-    sixty_min_ago = [h for h in s["history"] if time_running - h[0] <= 3600]
-    if sixty_min_ago:
-        s["Per 60m"] = s["Videos Scraped"] - sixty_min_ago[0][1]
-    else:
-        s["Per 60m"] = s["Videos Scraped"]
+    
 
     # Update status_labels with status_dict values
     pending = len([v for v in status_dict.values() if v == "pending"])
@@ -162,6 +136,7 @@ def update_gui(tags, status_dict, labels, time_running):
     # Update session_labels with current status_dict["session"] values
     for i, (k, v) in enumerate(s.items()):
         if i < len(labels[1]):
+            
             labels[1][i].config(text=f"{k}: {v}")
 
     # Update time running label
@@ -182,8 +157,6 @@ if __name__ == "__main__":
         "Prev Videos": 0,
         "Prev Tag": 0,
         "Average": 0,
-        "Per 5m": 0,
-        "Per 60m": 0,
         "Misses": 0,
         "Invalid": 0,
         "Errors": 0
@@ -204,14 +177,16 @@ if __name__ == "__main__":
     session_grid = tk.Frame(root, relief="ridge", bd=5)
 
     time_running_label = tk.Label(root, text="Time Running: 00:00:00", font=font, relief="ridge", bd=5)
-    
     status_labels = [
-    tk.Label(status_grid, text=f"Pending: {len([v for v in status_dict.values() if v == "pending"])}", font=font),
-    tk.Label(status_grid, text=f"Running: {''.join([k for k, v in status_dict.items() if v == "running"])}", font=font),
-    tk.Label(status_grid, text=f"Finished: {len([v for v in status_dict.values() if v == "finished"])}", font=font),
+    tk.Label(status_grid, text=f"Pending: {len([v for v in status_dict.values() if v == 'pending'])}", font=font),
+    tk.Label(status_grid, text=f"Running: {', '.join([k for k, v in status_dict.items() if v == 'running'])}", font=font),
+    tk.Label(status_grid, text=f"Finished: {len([v for v in status_dict.values() if v == 'finished'])}", font=font),
     ]
-
-    session_labels = [tk.Label(session_grid, text=f"{k}: {v}", font=font) for k, v in status_dict["session"].items()]
+    
+    try:
+        session_labels = [tk.Label(session_grid, text=f"{k}: {v}", font=font) for k, v in status_dict["session"].items()]
+    except Exception as e:
+        print(f"Error encountered while creating labels: {e}")
 
     for i, label in enumerate(status_labels):
         label.grid(row=i, column=0, sticky="w", padx=10, pady=5)
